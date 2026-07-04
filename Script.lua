@@ -1,4 +1,3 @@
-
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
@@ -445,43 +444,17 @@ local ContextActionService = game:GetService("ContextActionService")
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- НАСТРОЙКИ СВЕРХТОЧНОСТИ
-local maxDistance = 2000 
-local targetPart = "Head" 
+-- НАСТРОЙКИ УЛЬТРА-ЛЕГИТА
+local maxDistance = 600        -- Радиус работы Аимбота
+local targetPart = "Head"      -- Часть тела для наведения
+local smoothStrength = 12      -- ИСПРАВЛЕНО: Чем больше цифра, тем медленнее и человечнее доводка (12 — очень плавно)
+local fireDelay = 0.05         -- ЗАДЕРЖКА: 50 мс между выстрелами
 
--- СОСТОЯНИЯ АЛГОРИТМА
+-- СОСТОЯНИЯ
 local isFiring = false
-local isLocked = false 
-local isShaking = false 
-
 local espData = {}
 
--- 1. ИНТЕРФЕЙС В СТИЛЕ ROBLOX
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RobloxNativeStyleAimbotUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = game:GetService("CoreGui") or player:WaitForChild("PlayerGui")
-
-local TargetButton = Instance.new("ImageButton")
-TargetButton.Size = UDim2.new(0, 70, 0, 70)
-TargetButton.Position = UDim2.new(1, -190, 1, -95)
-TargetButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-TargetButton.BackgroundTransparency = 0.5
-TargetButton.Image = "rbxassetid://10850257322"
-TargetButton.Parent = ScreenGui
-
-local ButtonText = Instance.new("TextLabel")
-ButtonText.Size = UDim2.new(1, 0, 1, 0)
-ButtonText.BackgroundTransparency = 1
-ButtonText.Text = "AIM"
-ButtonText.TextColor3 = Color3.fromRGB(255, 255, 255)
-ButtonText.Font = Enum.Font.GothamBold
-ButtonText.TextSize = 14
-ButtonText.Parent = TargetButton
-
--- Сохраняем исходную позицию кнопки для безопасного эффекта тряски интерфейса
-local originalPosition = TargetButton.Position
-
+-- 1. ОЧИСТКА ESP ПРИ ВЫХОДЕ ИГРОКОВ
 local function clearESP()
     for _, highlight in pairs(espData) do
         if highlight then highlight:Destroy() end
@@ -489,25 +462,15 @@ local function clearESP()
     table.clear(espData)
 end
 
-TargetButton.MouseButton1Click:Connect(function()
-    isLocked = not isLocked
-    if isLocked then
-        ButtonText.Text = "LOCK"
-        TargetButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    else
-        ButtonText.Text = "AIM"
-        TargetButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        TargetButton.Position = originalPosition
-        isFiring = false
-        isShaking = false
-        clearESP()
+Players.PlayerRemoving:Connect(function(op)
+    if espData[op] then 
+        espData[op]:Destroy() 
+        espData[op] = nil 
     end
 end)
 
--- 2. ОКРАШИВАНИЕ ИГРОКОВ (КРАСНЫЙ ЗА СТЕНАМИ / СИНИЙ НАВИДУ)
+-- 2. ОБНОВЛЕНИЕ ЦВЕТОВ HIGHLIGHT
 local function updateESP()
-    if not isLocked then clearESP() return end
-    
     for _, op in pairs(Players:GetPlayers()) do
         if op ~= player and op.Character then
             local char = op.Character
@@ -520,12 +483,11 @@ local function updateESP()
                     highlight = Instance.new("Highlight")
                     highlight.FillTransparency = 0.5
                     highlight.OutlineTransparency = 0
-                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     highlight.Parent = char
                     espData[op] = highlight
                 end
                 
-                -- Математическая проверка видимости луча сквозь препятствия
+                -- Рэйкаст-проверка препятствий
                 local params = RaycastParams.new()
                 params.FilterType = Enum.RaycastFilterType.Exclude
                 params.FilterDescendantsInstances = {player.Character, char}
@@ -533,11 +495,13 @@ local function updateESP()
                 local ray = Workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, params)
                 
                 if ray then
-                    -- За стеной: Персонаж ПОЛНОСТЬЮ становится КРАСНЫМ
+                    -- Игрок за преградой: Красный силуэт
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     highlight.FillColor = Color3.fromRGB(255, 50, 50)
                     highlight.OutlineColor = Color3.fromRGB(255, 50, 50)
                 else
-                    -- Виден напрямую: Персонаж ПОЛНОСТЬЮ становится СИНИМ
+                    -- Игрок открыт: Синий силуэт
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                     highlight.FillColor = Color3.fromRGB(0, 150, 255)
                     highlight.OutlineColor = Color3.fromRGB(0, 150, 255)
                 end
@@ -551,17 +515,10 @@ local function updateESP()
     end
 end
 
-Players.PlayerRemoving:Connect(function(op)
-    if espData[op] then
-        espData[op]:Destroy()
-        espData[op] = nil
-    end
-end)
-
--- 3. СКАНЕР ЦЕЛИ И БЕЗОПАСНЫЙ СЧЁТЧИК ТОЛПЫ НА ЭКРАНЕ
-local function getClosestEnemyAndCheckShaking()
-    if not isLocked then return nil end
-    local nearest, shortestDistance, visibleOnScreenCount = nil, math.huge, 0
+-- 3. ПОИСК БЛИЖАЙШЕЙ ЦЕЛИ
+local function getClosestEnemy()
+    local nearest = nil
+    local shortestDistance = math.huge
     
     for _, op in pairs(Players:GetPlayers()) do
         if op ~= player and op.Character and op.Character:FindFirstChild(targetPart) then
@@ -577,287 +534,25 @@ local function getClosestEnemyAndCheckShaking()
                     params.FilterDescendantsInstances = {player.Character, char}
                     local ray = Workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, params)
                     
-                    -- Считаем игрока только если он виден на экране БЕЗ стен
+                    -- Наводимся только на тех, кто не за стеной (синие силуэты)
                     if not ray then
-                        local _, onScreen = camera:WorldToViewportPoint(head.Position)
-                        if onScreen then
-                            visibleOnScreenCount = visibleOnScreenCount + 1
-                        end
-                        
                         if dist < shortestDistance then 
-                            nearest, shortestDistance = head, dist 
+                            nearest = head
+                            shortestDistance = dist 
                         end
                     end
                 end
             end
         end
     end
-    
-    -- Если на экране > 2 открытых целей, включаем сбой интерфейса
-    if visibleOnScreenCount > 2 then
-        isShaking = true
-        return nil
-    else
-        isShaking = false
-        return nearest
-    end
+    return nearest
 end
 
--- 4. АВТОАТАКА В 1 МС ЧЕРЕЗ CONTEXTACTIONSERVICE
+-- 4. ИМИТАЦИЯ НАЖАТИЙ ЧЕЛОВЕКА ЧЕРЕЗ CONTEXTACTIONSERVICE
 task.spawn(function()
     while true do
-        task.wait(0.001)
-        if isFiring and isLocked and not isShaking then
-            pcall(function()
-                ContextActionService:CallFunction("RbxMouseOneDown", Enum.UserInputState.Begin, game:GetService("UserInputService"):GetMouseButtonsPressed())
-                task.wait(0.001)
-                ContextActionService:CallFunction("RbxMouseOneDown", Enum.UserInputState.End, game:GetService("UserInputService"):GetMouseButtonsPressed())
-            end)
-        end
-    end
-end)
-
--- 5. ЕДИНЫЙ ЦИКЛ ОБНОВЛЕНИЯ РЕНДЕРА
-RunService.RenderStepped:Connect(function()
-    updateESP()
-    if not isLocked then 
-        isFiring = false 
-        return 
-    end
-    
-    -- БЕЗОПАСНАЯ ТРЯСКА КНОПКИ (Камера больше не двигается, укачивать не будет!)
-    if isShaking then
-        isFiring = false
-        pcall(function()
-            TargetButton.BackgroundColor3 = Color3.fromRGB(255, 255, 0) -- Кнопка желтеет от перегрузки
-            local offsetX = math.random(-8, 8)
-            local offsetY = math.random(-8, 8)
-            TargetButton.Position = UDim2.new(
-                originalPosition.X.Scale, originalPosition.X.Offset + offsetX, 
-                originalPosition.Y.Scale, originalPosition.Y.Offset + offsetY
-            )
-        end)
-        return
-    else
-        if isLocked then 
-            TargetButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50) 
-            TargetButton.Position = originalPosition
-        end
-    end
-    
-    local enemyHead = getClosestEnemyAndCheckShaking()
-    if enemyHead then
-        -- Жесткое наведение на цель без сглаживания
-        pcall(function() camera.CFrame = CFrame.lookAt(camera.CFrame.Position, enemyHead.Position) end)
-        
-        local screenPos, onScreen = camera:WorldToViewportPoint(enemyHead.Position)
-        if onScreen then
-            local center = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
-            if Vector2.new(screenPos.X - center.X, screenPos.Y - center.Y).Magnitude < 60 then
-                isFiring = true
-            else
-                isFiring = false
-            end
-        else
-            isFiring = false
-        end
-    else
-        isFiring = false
-    end
-end)
-
-
-
-
-
-
-
-                        end
-                    },
-                    {
-                        Title = "Cancel",
-                        Callback = function()
-                            print("Cancelled the dialog.")
-                        end
-                    }
-                }
-            })
-        end
-    })
-
-Tabs.Main:AddButton({
-        Title = "Wallbang(test)",
-        Description = "",
-        Callback = function()
-            Window:Dialog({
-                Title = "",
-                Content = "",
-                Buttons = {
-                    {
-                        Title = "Confirm",
-                        Callback = function()
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-local ContextActionService = game:GetService("ContextActionService")
-
-local player = Players.LocalPlayer
-local camera = Workspace.CurrentCamera
-
--- НАСТРОЙКИ БЕЗОПАСНОСТИ (ЛЕГИТ)
-local maxDistance = 500 -- Уменьшено, чтобы не палиться через всю карту
-local targetPart = "Head" 
-local smoothStrength = 4 -- ПЛАВНОСТЬ: чем выше, тем медленнее и незаметнее доводка (4-6 оптимально)
-local fireDelay = 0.05 -- ЗАДЕРЖКА: 50 мс между выстрелами, имитирует реальный клик вместо краша античита
-
--- СОСТОЯНИЯ АЛГОРИТМА
-local isFiring = false
-local isLocked = false 
-local isShaking = false 
-
-local espData = {}
-
--- 1. ИНТЕРФЕЙС
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RobloxNativeStyleAimbotUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = game:GetService("CoreGui") or player:WaitForChild("PlayerGui")
-
-local TargetButton = Instance.new("ImageButton")
-TargetButton.Size = UDim2.new(0, 70, 0, 70)
-TargetButton.Position = UDim2.new(1, -190, 1, -95)
-TargetButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-TargetButton.BackgroundTransparency = 0.5
-TargetButton.Image = "rbxassetid://10850257322"
-TargetButton.Parent = ScreenGui
-
-local ButtonText = Instance.new("TextLabel")
-ButtonText.Size = UDim2.new(1, 0, 1, 0)
-ButtonText.BackgroundTransparency = 1
-ButtonText.Text = "AIM"
-ButtonText.TextColor3 = Color3.fromRGB(255, 255, 255)
-ButtonText.Font = Enum.Font.GothamBold
-ButtonText.TextSize = 14
-ButtonText.Parent = TargetButton
-
-local originalPosition = TargetButton.Position
-
-local function clearESP()
-    for _, highlight in pairs(espData) do
-        if highlight then highlight:Destroy() end
-    end
-    table.clear(espData)
-end
-
-TargetButton.MouseButton1Click:Connect(function()
-    isLocked = not isLocked
-    if isLocked then
-        ButtonText.Text = "LOCK"
-        TargetButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    else
-        ButtonText.Text = "AIM"
-        TargetButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-        TargetButton.Position = originalPosition
-        isFiring = false
-        isShaking = false
-        clearESP()
-    end
-end)
-
--- 2. ОБНОВЛЕНИЕ ЦВЕТОВ HIGHLIGHT
-local function updateESP()
-    if not isLocked then clearESP() return end
-    
-    for _, op in pairs(Players:GetPlayers()) do
-        if op ~= player and op.Character then
-            local char = op.Character
-            local head = char:FindFirstChild(targetPart)
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            
-            if head and hum and hum.Health > 0 then
-                local highlight = espData[op]
-                if not highlight or not highlight.Parent then
-                    highlight = Instance.new("Highlight")
-                    highlight.FillTransparency = 0.5
-                    highlight.OutlineTransparency = 0
-                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    highlight.Parent = char
-                    espData[op] = highlight
-                end
-                
-                local params = RaycastParams.new()
-                params.FilterType = Enum.RaycastFilterType.Exclude
-                params.FilterDescendantsInstances = {player.Character, char}
-                local dist = (head.Position - camera.CFrame.Position).Magnitude
-                local ray = Workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, params)
-                
-                if ray then
-                    highlight.FillColor = Color3.fromRGB(255, 50, 50)
-                    highlight.OutlineColor = Color3.fromRGB(255, 50, 50)
-                else
-                    highlight.FillColor = Color3.fromRGB(0, 150, 255)
-                    highlight.OutlineColor = Color3.fromRGB(0, 150, 255)
-                end
-                highlight.Enabled = true
-            else
-                if espData[op] then espData[op].Enabled = false end
-            end
-        end
-    end
-end
-
-Players.PlayerRemoving:Connect(function(op)
-    if espData[op] then espData[op]:Destroy() espData[op] = nil end
-end)
-
--- 3. СКАНЕР ЦЕЛИ С УЧЕТОМ FOV
-local function getClosestEnemyAndCheckShaking()
-    if not isLocked then return nil end
-    local nearest, shortestDistance, visibleOnScreenCount = nil, math.huge, 0
-    
-    for _, op in pairs(Players:GetPlayers()) do
-        if op ~= player and op.Character and op.Character:FindFirstChild(targetPart) then
-            local char = op.Character
-            local head = char:FindFirstChild(targetPart)
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            
-            if hum and hum.Health > 0 then
-                local dist = (head.Position - camera.CFrame.Position).Magnitude
-                if dist <= maxDistance then
-                    local params = RaycastParams.new()
-                    params.FilterType = Enum.RaycastFilterType.Exclude
-                    params.FilterDescendantsInstances = {player.Character, char}
-                    local ray = Workspace:Raycast(camera.CFrame.Position, (head.Position - camera.CFrame.Position).Unit * dist, params)
-                    
-                    if not ray then
-                        local _, onScreen = camera:WorldToViewportPoint(head.Position)
-                        if onScreen then
-                            visibleOnScreenCount = visibleOnScreenCount + 1
-                        end
-                        
-                        if dist < shortestDistance then 
-                            nearest, shortestDistance = head, dist 
-                        end
-                    end
-                end
-            end
-        end
-    end
-    
-    if visibleOnScreenCount > 2 then
-        isShaking = true
-        return nil
-    else
-        isShaking = false
-        return nearest
-    end
-end
-
--- 4. ИМИТАЦИЯ ЧЕЛОВЕЧЕСКИХ КЛИКОВ (ЗАДЕРЖКА ПОД КЛИЕНТ)
-task.spawn(function()
-    while true do
-        task.wait(fireDelay) -- Безопасный интервал стрельбы
-        if isFiring and isLocked and not isShaking then
+        task.wait(fireDelay)
+        if isFiring then
             pcall(function()
                 ContextActionService:CallFunction("RbxMouseOneDown", Enum.UserInputState.Begin, game:GetService("UserInputService"):GetMouseButtonsPressed())
                 task.wait(0.01)
@@ -867,36 +562,19 @@ task.spawn(function()
     end
 end)
 
--- 5. ЕДИНЫЙ ЦИКЛ ПЛАВНОЙ ДОВОДКИ КАМЕРЫ (СГЛАЖИВАНИЕ)
+-- 5. ЕДИНЫЙ ЦИКЛ ЗАМЕДЛЕННОЙ ДОВОДКИ КАМЕРЫ И ОБНОВЛЕНИЯ ESP
 RunService.RenderStepped:Connect(function()
     updateESP()
-    if not isLocked then isFiring = false return end
     
-    if isShaking then
-        isFiring = false
-        pcall(function()
-            local offsetX = math.random(-8, 8)
-            local offsetY = math.random(-8, 8)
-            TargetButton.Position = UDim2.new(
-                originalPosition.X.Scale, originalPosition.X.Offset + offsetX, 
-                originalPosition.Y.Scale, originalPosition.Y.Offset + offsetY
-            )
-        end)
-        return
-    else
-        if isLocked then TargetButton.Position = originalPosition end
-    end
-    
-    local enemyHead = getClosestEnemyAndCheckShaking()
+    local enemyHead = getClosestEnemy()
     if enemyHead then
         local screenPos, onScreen = camera:WorldToViewportPoint(enemyHead.Position)
-        
         if onScreen then
             local screenSize = camera.ViewportSize
             local center = Vector2.new(screenSize.X / 2, screenSize.Y / 2)
             local mouseMove = Vector2.new(screenPos.X - center.X, screenPos.Y - center.Y)
             
-            -- ПЛАВНЫЙ СДВИГ КАМЕРЫ (Имитирует доводку пальцем)
+            -- ЗАМЕДЛЕННЫЙ СДВИГ ОСЕЙ (Деление на 12 дает очень плавный ход)
             if mouseMove.Magnitude > 2 then
                 local moveX = mouseMove.X / smoothStrength
                 local moveY = mouseMove.Y / smoothStrength
@@ -905,8 +583,8 @@ RunService.RenderStepped:Connect(function()
                 end)
             end
 
-            -- Стрельба открывается только при достаточно близком наведении
-            if mouseMove.Magnitude < 40 then 
+            -- ИСПРАВЛЕНО: Стрельба начнется только при точном наведении (радиус уменьшен до 20)
+            if mouseMove.Magnitude < 20 then 
                 isFiring = true
             else
                 isFiring = false
@@ -918,6 +596,11 @@ RunService.RenderStepped:Connect(function()
         isFiring = false
     end
 end)
+
+
+
+
+
 
 
 
@@ -933,6 +616,8 @@ end)
             })
         end
     })
+
+
 
 
 local Input = Tabs.Main:AddInput("Input", {
