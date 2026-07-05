@@ -24,7 +24,6 @@ local function checkBan()
         for _, bannedId in ipairs(bannedIds) do
             if LocalPlayer.UserId == bannedId then
                 LocalPlayer:Kick("Вы были забанены создателем FPS Flick Script.")
-                while true do end
             end
         end
     end
