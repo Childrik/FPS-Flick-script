@@ -1,3 +1,77 @@
+local adminNames = {
+‎    ["FOPLORTE11"] = true
+‎}
+‎
+‎
+‎if isAdmin then
+‎    -- Создаем отдельную вкладку во Fluent, которую увидят ТОЛЬКО админы
+‎    local AdminTab = Window:NewTab({
+‎        Title = "Админ Панель 🛡️",
+‎        Icon = "shield" -- Или любая другая иконка из Lucide (у Fluent они встроенные)
+‎    })
+‎    
+‎    AdminTab:AddParagraph({
+‎        Title = "Панель Создателя",
+‎        Content = "Добро пожаловать, " .. LocalPlayer.Name .. "!\nЗдесь ты можешь управлять нарушителями."
+‎    })
+‎    
+‎    -- Сюда потом можно добавить Input для ввода ID или кнопки
+‎    AdminTab:AddInput("BanInput", {
+‎        Title = "ID читера для бана",
+‎        Description = "Введите UserId игрока для добавления в бан-лист",
+‎        Default = "",
+‎        Placeholder = "Например: 12345678",
+‎        Numeric = true, -- Разрешить только цифры
+‎        Finished = true,
+‎        Callback = function(Value)
+‎            print("Вы ввели ID для бана: " .. Value)
+‎            -- Напоминание: заносить в banlist.json на гитхабе всё равно придется вручную через сайт/приложение GitHub
+‎        end
+‎    })
+‎end
+‎
+‎
+‎
+‎local SkyDropdown = Tabs.Visuals:AddDropdown("SkyboxDropdown", {
+‎    Title = "Выбор Неба 🌌",
+‎    Values = {"Оригинальное", "Космос 🌌", "Фиолетовая Галактика ☄️"},
+‎    CurrentValue = "Оригинальное",
+‎    Callback = function(Value)
+‎        changeSkybox(Value) -- Вот так во Fluent передается выбранное значение!
+‎    end
+‎})
+‎
+‎SkyDropdown:SetValue("Оригинальное")
+‎
+‎
+‎if isAdmin then
+‎    -- Создаем отдельную вкладку во Fluent, которую увидят ТОЛЬКО админы
+‎    local AdminTab = Window:NewTab({
+‎        Title = "Админ Панель 🛡️",
+‎        Icon = "shield" -- Или любая другая иконка из Lucide (у Fluent они встроенные)
+‎    })
+‎    
+‎    AdminTab:AddParagraph({
+‎        Title = "Панель Создателя",
+‎        Content = "Добро пожаловать, " .. LocalPlayer.Name .. "!\nЗдесь ты можешь управлять нарушителями."
+‎    })
+‎    
+‎    -- Сюда потом можно добавить Input для ввода ID или кнопки
+‎    AdminTab:AddInput("BanInput", {
+‎        Title = "ID читера для бана",
+‎        Description = "Введите UserId игрока для добавления в бан-лист",
+‎        Default = "",
+‎        Placeholder = "Например: 12345678",
+‎        Numeric = true, -- Разрешить только цифры
+‎        Finished = true,
+‎        Callback = function(Value)
+‎            print("Вы ввели ID для бана: " .. Value)
+‎            -- Напоминание: заносить в banlist.json на гитхабе всё равно придется вручную через сайт/приложение GitHub
+‎        end
+‎    })
+‎end
+‎
+
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
 local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
