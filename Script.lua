@@ -1,116 +1,654 @@
-local HttpService = game:GetService("HttpService")
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
-local banListUrl = "https://raw.githubusercontent.com/Childrik/FPS-Flick-script/refs/heads/main/banlist.json"
+-- ========== СОЗДАНИЕ ОКНА ==========
+local Window = Fluent:CreateWindow({
+    Title = "Aimbot + ESP",
+    SubTitle = "by FOPLORTE11",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
 
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-local Window = Fluent:CreateWindow({ Title = "LGmn 0.1 ", SubTitle = "by TANCHYAZmm2Koroleva", TabWidth = 160, Size = UDim2.fromOffset(550, 340), Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl })
-
+-- ========== ВКЛАДКИ ==========
 local Tabs = {
-    Main = Window:AddTab({ Title = "Main", Icon = "" }),
-    But = Window:AddTab({ Title = "Bindable Buttons", Icon = "" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+    Main = Window:AddTab({ Title = "Главная", Icon = "home" }),
+    Aimbot = Window:AddTab({ Title = "Аимбот", Icon = "crosshair" }),
+    Visuals = Window:AddTab({ Title = "Визуалы", Icon = "eye" }),
+    Settings = Window:AddTab({ Title = "Настройки", Icon = "settings" })
 }
 
-local adminNames = { ["FOPLORTE11"] = true }
-local isAdmin = adminNames[LocalPlayer.Name] ~= nil
+-- ========== НАСТРОЙКИ ==========
+local Settings = {
+    -- Аимбот
+    AimbotEnabled = false,
+    Smooth = 12,
+    Fov = 300,
+    AimPart = "Head",
+    CheckWalls = false,
+    
+    -- Анти-бан
+    RandomSpread = 0.08,
+    MaxAngle = 45,
+    Humanize = true,
+    MissChance = 0,
+    
+    -- ESP
+    ESPEnabled = false,
+    VisibleColor = Color3.fromRGB(0, 150, 255),
+    HiddenColor = Color3.fromRGB(255, 50, 50),
+    FillTransparency = 0.3,
+    
+    -- Небо
+    Skybox = "Выключено",
+}
 
-local function checkBan()
-    local success, response = pcall(function() return HttpService:GetAsync(banListUrl) end)
-    if success then
-        local bannedIds = HttpService:JSONDecode(response)
-        for _, bannedId in ipairs(bannedIds) do
-            if LocalPlayer.UserId == bannedId then
-                LocalPlayer:Kick("Вы были забанены создателем FPS Flick Script.")
+-- Сохраняем оригинальные настройки освещения
+local OriginalLighting = {
+    ClockTime = Lighting.ClockTime,
+    Ambient = Lighting.Ambient,
+    Brightness = Lighting.Brightness,
+    OutdoorAmbient = Lighting.OutdoorAmbient,
+}
+
+-- ========== НЕБО ==========
+local function SetSky(value)
+    local oldSky = Lighting:FindFirstChild("CustomSky")
+    if oldSky then oldSky:Destroy() end
+    
+    if value == "Чёрное (Ночь)" then
+        Lighting.ClockTime = 0
+        Lighting.Ambient = Color3.fromRGB(30, 30, 40)
+        Lighting.Brightness = 1
+        Lighting.OutdoorAmbient = Color3.fromRGB(30, 30, 40)
+        
+        local sky = Instance.new("Sky")
+        sky.Name = "CustomSky"
+        sky.CelestialBodiesShown = false
+        sky.Parent = Lighting
+        
+    elseif value == "Фиолетовый (Закат)" then
+        Lighting.ClockTime = 17
+        Lighting.Ambient = Color3.fromRGB(120, 80, 160)
+        Lighting.Brightness = 1.5
+        Lighting.OutdoorAmbient = Color3.fromRGB(120, 80, 160)
+        
+        local sky = Instance.new("Sky")
+        sky.Name = "CustomSky"
+        sky.CelestialBodiesShown = true
+        sky.MoonAngularSize = 10
+        sky.SunAngularSize = 10
+        sky.Parent = Lighting
+        
+    else
+        Lighting.ClockTime = OriginalLighting.ClockTime
+        Lighting.Ambient = OriginalLighting.Ambient
+        Lighting.Brightness = OriginalLighting.Brightness
+        Lighting.OutdoorAmbient = OriginalLighting.OutdoorAmbient
+    end
+end
+
+-- ========== ESP ==========
+local espObjects = {}
+
+local function CreateESP(player)
+    if player == LocalPlayer then return end
+    if espObjects[player] then return end
+    
+    local char = player.Character
+    if not char then return end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.FillTransparency = Settings.FillTransparency
+    highlight.OutlineTransparency = 0.2
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.FillColor = Settings.VisibleColor
+    highlight.OutlineColor = Settings.VisibleColor
+    highlight.Parent = char
+    
+    espObjects[player] = highlight
+end
+
+local function RemoveESP(player)
+    if espObjects[player] then
+        espObjects[player]:Destroy()
+        espObjects[player] = nil
+    end
+end
+
+local function ClearAllESP()
+    for player, highlight in pairs(espObjects) do
+        if highlight then
+            pcall(function() highlight:Destroy() end)
+        end
+    end
+    table.clear(espObjects)
+end
+
+local function UpdateESP()
+    if not Settings.ESPEnabled then
+        ClearAllESP()
+        return
+    end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        
+        local char = player.Character
+        if not char then
+            RemoveESP(player)
+            continue
+        end
+        
+        local head = char:FindFirstChild("Head")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        if not head or not hum or hum.Health <= 0 then
+            RemoveESP(player)
+            continue
+        end
+        
+        if not espObjects[player] then
+            CreateESP(player)
+        end
+        
+        local highlight = espObjects[player]
+        if not highlight then continue end
+        
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = {LocalPlayer.Character, char}
+        
+        local origin = Camera.CFrame.Position
+        local direction = (head.Position - origin).Unit
+        local distance = (head.Position - origin).Magnitude
+        
+        local ray = Workspace:Raycast(origin, direction * distance, params)
+        
+        if ray then
+            highlight.FillColor = Settings.HiddenColor
+            highlight.OutlineColor = Settings.HiddenColor
+        else
+            highlight.FillColor = Settings.VisibleColor
+            highlight.OutlineColor = Settings.VisibleColor
+        end
+    end
+    
+    for player, _ in pairs(espObjects) do
+        if not player.Parent then
+            RemoveESP(player)
+        end
+    end
+end
+
+-- ========== AIMBOT С АНТИ-БАНОМ ==========
+local lastShotTime = 0
+local shotsCount = 0
+
+local function CheckAntiBan(targetPos)
+    local lookVector = Camera.CFrame.LookVector
+    local toTarget = (targetPos - Camera.CFrame.Position).Unit
+    local angle = math.deg(math.acos(lookVector:Dot(toTarget)))
+    
+    if angle > Settings.MaxAngle then
+        return false
+    end
+    
+    local currentTime = tick()
+    if currentTime - lastShotTime < 0.05 then
+        shotsCount = shotsCount + 1
+        if shotsCount > 10 then
+            shotsCount = 0
+            return false
+        end
+    else
+        shotsCount = 1
+    end
+    lastShotTime = currentTime
+    
+    return true
+end
+
+local function GetHumanDelay()
+    if not Settings.Humanize then return 0 end
+    return math.random(50, 150) / 1000
+end
+
+local function ShouldMiss()
+    if Settings.MissChance <= 0 then return false end
+    return math.random() * 100 < Settings.MissChance
+end
+
+local function GetRandomSpread()
+    local spread = Settings.RandomSpread or 0.08
+    return Vector3.new(
+        (math.random() * 2 - 1) * spread,
+        (math.random() * 2 - 1) * spread,
+        (math.random() * 2 - 1) * spread
+    )
+end
+
+local function IsPlayerVisible(player)
+    if not player or not player.Character then return false end
+    
+    local head = player.Character:FindFirstChild("Head")
+    if not head then return false end
+    
+    local origin = Camera.CFrame.Position
+    local direction = (head.Position - origin).Unit
+    local distance = (head.Position - origin).Magnitude
+    
+    if distance > 1000 then return false end
+    
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character, player.Character}
+    params.IgnoreWater = true
+    
+    local ray = Workspace:Raycast(origin, direction * distance, params)
+    
+    return not ray
+end
+
+task.spawn(function()
+    RunService.RenderStepped:Connect(function()
+        UpdateESP()
+        
+        if Settings.AimbotEnabled then
+            local closestPlayer = nil
+            local shortestDistance = Settings.Fov
+            
+            for _, player in pairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                if not player.Character then continue end
+                
+                local part = player.Character:FindFirstChild(Settings.AimPart)
+                if not part then continue end
+                
+                if Settings.CheckWalls then
+                    if not IsPlayerVisible(player) then
+                        continue
+                    end
+                end
+                
+                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)).Magnitude
+                    if dist < shortestDistance then
+                        shortestDistance = dist
+                        closestPlayer = part
+                    end
+                end
+            end
+            
+            if closestPlayer then
+                local spread = GetRandomSpread()
+                local targetPos = closestPlayer.Position + spread
+                
+                if CheckAntiBan(targetPos) then
+                    local delay = GetHumanDelay()
+                    if delay > 0 then
+                        task.wait(delay)
+                    end
+                    
+                    if ShouldMiss() then
+                        targetPos = targetPos + Vector3.new(
+                            (math.random() * 2 - 1) * 0.5,
+                            (math.random() * 2 - 1) * 0.5,
+                            (math.random() * 2 - 1) * 0.5
+                        )
+                    end
+                    
+                    local targetCFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+                    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, 1 / Settings.Smooth)
+                end
+            end
+        end
+    end)
+end)
+
+-- ========== КНОПКА СВОРАЧИВАНИЯ (СКРЫВАЕТСЯ ВМЕСТЕ С МЕНЮ) ==========
+local minimizeButton = nil
+local minimizeGui = nil
+
+local function CreateMinimizeButton()
+    minimizeGui = Instance.new("ScreenGui")
+    minimizeGui.Name = "MinimizeButton"
+    minimizeGui.ResetOnSpawn = false
+    minimizeGui.Parent = LocalPlayer.PlayerGui
+    
+    minimizeButton = Instance.new("TextButton")
+    minimizeButton.Size = UDim2.fromOffset(50, 50)
+    minimizeButton.Position = UDim2.fromOffset(10, 10)
+    minimizeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    minimizeButton.BackgroundTransparency = 0.2
+    minimizeButton.BorderSizePixel = 0
+    minimizeButton.Text = "−"
+    minimizeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    minimizeButton.TextSize = 30
+    minimizeButton.Font = Enum.Font.GothamBold
+    minimizeButton.Parent = minimizeGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = minimizeButton
+    
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+    
+    minimizeButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = minimizeButton.Position
+        end
+    end)
+    
+    minimizeButton.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+    
+    minimizeButton.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or 
+                         input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            minimizeButton.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+    
+    minimizeButton.MouseButton1Click:Connect(function()
+        Window:Minimize()
+        -- Скрываем кнопку когда меню свернуто
+        if minimizeGui then
+            minimizeGui.Enabled = false
+        end
+        Fluent:Notify({ Title = "Меню свернуто", Content = "Аимбот активен!", Duration = 2 })
+    end)
+    
+    return minimizeGui
+end
+
+CreateMinimizeButton()
+
+-- Отслеживаем состояние окна Fluent
+local function CheckWindowState()
+    -- Проверяем видимость окна каждые 0.5 секунды
+    task.spawn(function()
+        while true do
+            task.wait(0.5)
+            if Window.Visible then
+                -- Если окно открыто - показываем кнопку
+                if minimizeGui then
+                    minimizeGui.Enabled = true
+                end
+            else
+                -- Если окно закрыто - скрываем кнопку
+                if minimizeGui then
+                    minimizeGui.Enabled = false
+                end
+            end
+        end
+    end)
+end
+
+CheckWindowState()
+
+-- ========== ИНТЕРФЕЙС ==========
+
+-- Главная
+Tabs.Main:AddParagraph({
+    Title = "🚀 Aimbot + ESP",
+    Content = "Включите функции ниже"
+})
+
+Tabs.Main:AddParagraph({
+    Title = "⚠️ ВАЖНО ДЛЯ ТЕЛЕФОНОВ",
+    Content = "После включения аимбота ЗАКРОЙТЕ МЕНЮ\n(нажмите кнопку − в левом верхнем углу)\nИначе аимбот не будет работать!"
+})
+
+Tabs.Main:AddButton({
+    Title = "Включить всё",
+    Callback = function()
+        Settings.AimbotEnabled = true
+        Settings.ESPEnabled = true
+        Fluent:Notify({ Title = "Включено", Content = "Аимбот и ESP активированы\nЗакройте меню!", Duration = 3 })
+    end
+})
+
+Tabs.Main:AddButton({
+    Title = "Выключить всё",
+    Callback = function()
+        Settings.AimbotEnabled = false
+        Settings.ESPEnabled = false
+        ClearAllESP()
+        Fluent:Notify({ Title = "Выключено", Content = "Аимбот и ESP деактивированы", Duration = 2 })
+    end
+})
+
+Tabs.Main:AddButton({
+    Title = "Свернуть меню",
+    Callback = function()
+        Window:Minimize()
+        if minimizeGui then
+            minimizeGui.Enabled = false
+        end
+        Fluent:Notify({ Title = "Меню свернуто", Content = "Аимбот активен!", Duration = 2 })
+    end
+})
+
+-- ========== АИМБОТ ==========
+Tabs.Aimbot:AddToggle("AimbotToggle", {
+    Title = "🔫 Аимбот",
+    Default = false,
+    Callback = function(Value)
+        Settings.AimbotEnabled = Value
+        if Value then
+            Fluent:Notify({ Title = "Аимбот включен", Content = "Закройте меню для работы!", Duration = 3 })
+        else
+            Fluent:Notify({ Title = "Аимбот", Content = "Выключен", Duration = 2 })
+        end
+    end
+})
+
+Tabs.Aimbot:AddDropdown("AimbotPart", {
+    Title = "Часть тела",
+    Values = {"Head", "Torso", "UpperTorso", "LowerTorso", "HumanoidRootPart"},
+    Default = "Head",
+    Callback = function(Value)
+        Settings.AimPart = Value
+    end
+})
+
+Tabs.Aimbot:AddInput("AimbotFov", {
+    Title = "📏 FOV (Радиус поиска)",
+    Default = "300",
+    Placeholder = "50-800",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.Fov = math.clamp(num, 50, 800)
+        end
+    end
+})
+
+Tabs.Aimbot:AddInput("AimbotSmooth", {
+    Title = "🎯 Плавность наведения",
+    Description = "Больше = плавнее",
+    Default = "12",
+    Placeholder = "2-30",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.Smooth = math.clamp(num, 2, 30)
+        end
+    end
+})
+
+Tabs.Aimbot:AddToggle("AimbotCheckWalls", {
+    Title = "🧱 Проверка на стены",
+    Description = "Может влиять на производительность",
+    Default = false,
+    Callback = function(Value)
+        Settings.CheckWalls = Value
+    end
+})
+
+-- ========== АНТИ-БАН ==========
+Tabs.Aimbot:AddParagraph({
+    Title = "🛡 Анти-бан защита",
+    Content = "Настройки для скрытия аимбота"
+})
+
+Tabs.Aimbot:AddInput("RandomSpread", {
+    Title = "🎯 Рандомный разброс",
+    Description = "Имитация неточности стрельбы",
+    Default = "0.08",
+    Placeholder = "0.01-0.3",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.RandomSpread = math.clamp(num, 0.01, 0.3)
+        end
+    end
+})
+
+Tabs.Aimbot:AddInput("AntiBanMaxAngle", {
+    Title = "📐 Максимальный угол",
+    Description = "Меньше = безопаснее",
+    Default = "45",
+    Placeholder = "15-90",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.MaxAngle = math.clamp(num, 15, 90)
+        end
+    end
+})
+
+Tabs.Aimbot:AddToggle("AntiBanHumanize", {
+    Title = "👤 Человеческая задержка",
+    Description = "Добавляет задержку как у человека",
+    Default = true,
+    Callback = function(Value)
+        Settings.Humanize = Value
+    end
+})
+
+Tabs.Aimbot:AddInput("AntiBanMissChance", {
+    Title = "🎯 Шанс промаха %",
+    Description = "Иногда промахивается как человек",
+    Default = "0",
+    Placeholder = "0-10",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.MissChance = math.clamp(num, 0, 10)
+        end
+    end
+})
+
+-- ========== ВИЗУАЛЫ ==========
+Tabs.Visuals:AddToggle("ESPToggle", {
+    Title = "👁 ESP",
+    Default = false,
+    Callback = function(Value)
+        Settings.ESPEnabled = Value
+        if not Value then ClearAllESP() end
+        Fluent:Notify({ Title = "ESP", Content = Value and "Включен" or "Выключен", Duration = 2 })
+    end
+})
+
+Tabs.Visuals:AddDropdown("ESPVisibleColor", {
+    Title = "Цвет видимого игрока",
+    Values = {"Синий", "Зеленый", "Желтый", "Белый", "Фиолетовый", "Голубой"},
+    Default = "Синий",
+    Callback = function(Value)
+        local colors = {
+            ["Синий"] = Color3.fromRGB(0, 150, 255),
+            ["Зеленый"] = Color3.fromRGB(0, 255, 0),
+            ["Желтый"] = Color3.fromRGB(255, 255, 0),
+            ["Белый"] = Color3.fromRGB(255, 255, 255),
+            ["Фиолетовый"] = Color3.fromRGB(150, 0, 255),
+            ["Голубой"] = Color3.fromRGB(0, 255, 255)
+        }
+        Settings.VisibleColor = colors[Value] or Color3.fromRGB(0, 150, 255)
+    end
+})
+
+Tabs.Visuals:AddDropdown("ESPHiddenColor", {
+    Title = "Цвет скрытого игрока",
+    Values = {"Красный", "Оранжевый", "Розовый", "Белый", "Фиолетовый", "Темно-красный"},
+    Default = "Красный",
+    Callback = function(Value)
+        local colors = {
+            ["Красный"] = Color3.fromRGB(255, 50, 50),
+            ["Оранжевый"] = Color3.fromRGB(255, 150, 0),
+            ["Розовый"] = Color3.fromRGB(255, 100, 200),
+            ["Белый"] = Color3.fromRGB(255, 255, 255),
+            ["Фиолетовый"] = Color3.fromRGB(150, 0, 255),
+            ["Темно-красный"] = Color3.fromRGB(150, 0, 0)
+        }
+        Settings.HiddenColor = colors[Value] or Color3.fromRGB(255, 50, 50)
+    end
+})
+
+Tabs.Visuals:AddInput("ESPFillTransparency", {
+    Title = "Прозрачность заливки",
+    Default = "0.3",
+    Placeholder = "0-1",
+    Numeric = true,
+    Finished = true,
+    Callback = function(Value)
+        local num = tonumber(Value)
+        if num then
+            Settings.FillTransparency = math.clamp(num, 0, 1)
+            for _, highlight in pairs(espObjects) do
+                if highlight then
+                    highlight.FillTransparency = Settings.FillTransparency
+                end
             end
         end
     end
-end
--- Запускаем проверку бана в отдельном потоке, чтобы она не вешала основное меню
-task.spawn(function()
-    pcall(checkBan)
-end)
+})
 
+-- ========== НЕБО ==========
+Tabs.Visuals:AddParagraph({
+    Title = "🌅 Настройки неба",
+    Content = "Измените внешний вид неба"
+})
 
-local skyPresets = {
-    ["Космос 🌌"] = { Bk = "rbxassetid://12124501308", Dn = "rbxassetid://12124504107", Ft = "rbxassetid://12124505966", Lf = "rbxassetid://12124507742", Rt = "rbxassetid://12124511520", Up = "rbxassetid://12124513835" },
-    ["Фиолетовая Галактика ☄️"] = { Bk = "rbxassetid://600830446", Dn = "rbxassetid://600831635", Ft = "rbxassetid://600832725", Lf = "rbxassetid://600834079", Rt = "rbxassetid://600835865", Up = "rbxassetid://600836864" },
-    ["Оригинальное"] = nil
-}
-
-local function changeSkybox(presetName)
-    for _, child in ipairs(Lighting:GetChildren()) do if child:IsA("Sky") then child:Destroy() end end
-    local preset = skyPresets[presetName]
-    if preset then
-        local newSky = Instance.new("Sky")
-        newSky.Name = "CustomSky"
-        newSky.SkyboxBk = preset.Bk newSky.SkyboxDn = preset.Dn newSky.SkyboxFt = preset.Ft
-        newSky.SkyboxLf = preset.Lf newSky.SkyboxRt = preset.Rt newSky.SkyboxUp = preset.Up
-        newSky.Parent = Lighting
-    end
-end
-
-
-if isAdmin then
-    Tabs.Admin = Window:AddTab({ Title = "Админ Панель 🛡️", Icon = "shield" })
-    Tabs.Admin:AddParagraph({ Title = "Панель Создателя", Content = "Добро пожаловать, " .. LocalPlayer.Name .. "!" })
-    Tabs.Admin:AddInput("BanInput", { Title = "ID читера для бана", Numeric = true, Finished = true, Callback = function(Val) print("Введен ID: " .. Val) end })
-end
-
-local SkyDropdown = Tabs.Settings:AddDropdown("SkyboxDropdown", { Title = "Выбор Неба 🌌", Values = {"Оригинальное", "Космос 🌌", "Фиолетовая Галактика ☄️"}, CurrentValue = "Оригинальное", Callback = function(Val) changeSkybox(Val) end })
-SkyDropdown:SetValue("Оригинальное")
-
-do
-    Fluent:Notify({ Title = "Notification", Content = "Скрипт успешно загружен!", Duration = 5 })
-    Tabs.Main:AddParagraph({ Title = "by FOPLORTE11/TANCHYAZmm2Koroleva", Content = "Good Luck." })
-
-    local rand = math.random(1,100)
-    local bool = Instance.new("BoolValue", workspace) bool.Name = "n" .. rand bool.Value = false
-    local blo = Instance.new("StringValue", workspace) blo.Name = "s" .. rand blo.Value = "1.7"
-
-    local Input = Tabs.Main:AddInput("Input", { Title = "bhop delay", Default = "1.7", Numeric = true, Finished = false, Callback = function(v) end })
-    Input:OnChanged(function() blo.Value = Input.Value end)
-
-    Tabs.Main:AddButton({
-        Title = "3person",
-        Callback = function()
-            Window:Dialog({
-                Title = "Камера", Content = "Активировать вид от 3-го лица?",
-                Buttons = {
-                    { Title = "Confirm", Callback = function()
-                        local P = game:GetService("Players").LocalPlayer
-                        P.CameraMinZoomDistance = 5 P.CameraMaxZoomDistance = 30 P.CameraMode = Enum.CameraMode.Classic
-                        if workspace.CurrentCamera then workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end
-                        local function clean(c)
-                            if not c then return end
-                            local h = c:WaitForChild("Head", 5) if h then h.Transparency = 1 local f = h:FindFirstChildOfClass("Decal") if f then f:Destroy() end end
-                            for _, i in ipairs(c:GetChildren()) do if i:IsA("Accessory") then i:Destroy() end end
-                        end
-                        if P.Character then clean(P.Character) end P.CharacterAdded:Connect(clean)
-                    end },
-                    { Title = "Cancel" }
-                }
-            })
-        end
-    })
-
-    Tabs.But:AddButton({
-        Title = "3 person camera button",
-        Callback = function()
-            local UIS = game:GetService("UserInputService")
-            local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")) ScreenGui.Name = "MovableButtonUI"
-            local DragButton = Instance.new("ImageButton", ScreenGui) DragButton.Size = UDim2.new(0, 70, 0, 70) DragButton.Position = UDim2.new(0.5, -35, 0.5, -35) DragButton.BackgroundColor3 = Color3.fromRGB(0,0,0) DragButton.BackgroundTransparency = 0.5 DragButton.Image = "rbxassetid://10850257322"
-            local BT = Instance.new("TextLabel", DragButton) BT.Size = UDim2.new(1,0,1,0) BT.BackgroundTransparency = 1 BT.Text = "3 camera" BT.TextColor3 = Color3.fromRGB(255,255,255) BT.Font = Enum.Font.GothamBold BT.TextSize = 12
-
-            DragButton.MouseButton1Click:Connect(function()
-                LocalPlayer.CameraMinZoomDistance = 5 LocalPlayer.CameraMaxZoomDistance = 30 LocalPlayer.CameraMode = Enum.CameraMode.Classic
-            end)
-            local dragging, dragStart, startPos
-            DragButton.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true dragStart = i.Position startPos = DragButton.Position end end)
-            UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart DragButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
-            UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+Tabs.Vi            UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
         end
     })
 
