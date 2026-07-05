@@ -1,3 +1,169 @@
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local LocalPlayer = Players.LocalPlayer
+
+local banListUrl = "https://raw.githubusercontent.com/Childrik/FPS-Flick-script/refs/heads/main/banlist.json"
+local adminNames = { ["FOPLORTE11"] = true }
+local isAdmin = adminNames[LocalPlayer.Name] ~= nil
+
+local function checkBan()
+    local success, response = pcall(function() return HttpService:GetAsync(banListUrl) end)
+    if success then
+        local bannedIds = HttpService:JSONDecode(response)
+        for _, bannedId in ipairs(bannedIds) do
+            if LocalPlayer.UserId == bannedId then
+                LocalPlayer:Kick("Вы были забанены создателем FPS Flick Script.")
+                while true do end
+            end
+        end
+    end
+end
+checkBan()
+
+local skyPresets = {
+    ["Космос 🌌"] = { Bk = "rbxassetid://12124501308", Dn = "rbxassetid://12124504107", Ft = "rbxassetid://12124505966", Lf = "rbxassetid://12124507742", Rt = "rbxassetid://12124511520", Up = "rbxassetid://12124513835" },
+    ["Фиолетовая Галактика ☄️"] = { Bk = "rbxassetid://600830446", Dn = "rbxassetid://600831635", Ft = "rbxassetid://600832725", Lf = "rbxassetid://600834079", Rt = "rbxassetid://600835865", Up = "rbxassetid://600836864" },
+    ["Оригинальное"] = nil
+}
+
+local function changeSkybox(presetName)
+    for _, child in ipairs(Lighting:GetChildren()) do if child:IsA("Sky") then child:Destroy() end end
+    local preset = skyPresets[presetName]
+    if preset then
+        local newSky = Instance.new("Sky")
+        newSky.Name = "CustomSky"
+        newSky.SkyboxBk = preset.Bk newSky.SkyboxDn = preset.Dn newSky.SkyboxFt = preset.Ft
+        newSky.SkyboxLf = preset.Lf newSky.SkyboxRt = preset.Rt newSky.SkyboxUp = preset.Up
+        newSky.Parent = Lighting
+    end
+end
+
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local Window = Fluent:CreateWindow({ Title = "LGmn 0.1 ", SubTitle = "by TANCHYAZmm2Koroleva", TabWidth = 160, Size = UDim2.fromOffset(550, 340), Acrylic = true, Theme = "Dark", MinimizeKey = Enum.KeyCode.LeftControl })
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "" }),
+    But = Window:AddTab({ Title = "Bindable Buttons", Icon = "" }),
+    Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
+}
+
+if isAdmin then
+    Tabs.Admin = Window:AddTab({ Title = "Админ Панель 🛡️", Icon = "shield" })
+    Tabs.Admin:AddParagraph({ Title = "Панель Создателя", Content = "Добро пожаловать, " .. LocalPlayer.Name .. "!" })
+    Tabs.Admin:AddInput("BanInput", { Title = "ID читера для бана", Numeric = true, Finished = true, Callback = function(Val) print("Введен ID: " .. Val) end })
+end
+
+local SkyDropdown = Tabs.Settings:AddDropdown("SkyboxDropdown", { Title = "Выбор Неба 🌌", Values = {"Оригинальное", "Космос 🌌", "Фиолетовая Галактика ☄️"}, CurrentValue = "Оригинальное", Callback = function(Val) changeSkybox(Val) end })
+SkyDropdown:SetValue("Оригинальное")
+
+do
+    Fluent:Notify({ Title = "Notification", Content = "Скрипт успешно загружен!", Duration = 5 })
+    Tabs.Main:AddParagraph({ Title = "by FOPLORTE11/TANCHYAZmm2Koroleva", Content = "Good Luck." })
+
+    local rand = math.random(1,100)
+    local bool = Instance.new("BoolValue", workspace) bool.Name = "n" .. rand bool.Value = false
+    local blo = Instance.new("StringValue", workspace) blo.Name = "s" .. rand blo.Value = "1.7"
+
+    local Input = Tabs.Main:AddInput("Input", { Title = "bhop delay", Default = "1.7", Numeric = true, Finished = false, Callback = function(v) end })
+    Input:OnChanged(function() blo.Value = Input.Value end)
+
+    Tabs.Main:AddButton({
+        Title = "3person",
+        Callback = function()
+            Window:Dialog({
+                Title = "Камера", Content = "Активировать вид от 3-го лица?",
+                Buttons = {
+                    { Title = "Confirm", Callback = function()
+                        local P = game:GetService("Players").LocalPlayer
+                        P.CameraMinZoomDistance = 5 P.CameraMaxZoomDistance = 30 P.CameraMode = Enum.CameraMode.Classic
+                        if workspace.CurrentCamera then workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end
+                        local function clean(c)
+                            if not c then return end
+                            local h = c:WaitForChild("Head", 5) if h then h.Transparency = 1 local f = h:FindFirstChildOfClass("Decal") if f then f:Destroy() end end
+                            for _, i in ipairs(c:GetChildren()) do if i:IsA("Accessory") then i:Destroy() end end
+                        end
+                        if P.Character then clean(P.Character) end P.CharacterAdded:Connect(clean)
+                    end },
+                    { Title = "Cancel" }
+                }
+            })
+        end
+    })
+
+    Tabs.But:AddButton({
+        Title = "3 person camera button",
+        Callback = function()
+            local UIS = game:GetService("UserInputService")
+            local ScreenGui = Instance.new("ScreenGui", game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui")) ScreenGui.Name = "MovableButtonUI"
+            local DragButton = Instance.new("ImageButton", ScreenGui) DragButton.Size = UDim2.new(0, 70, 0, 70) DragButton.Position = UDim2.new(0.5, -35, 0.5, -35) DragButton.BackgroundColor3 = Color3.fromRGB(0,0,0) DragButton.BackgroundTransparency = 0.5 DragButton.Image = "rbxassetid://10850257322"
+            local BT = Instance.new("TextLabel", DragButton) BT.Size = UDim2.new(1,0,1,0) BT.BackgroundTransparency = 1 BT.Text = "3 camera" BT.TextColor3 = Color3.fromRGB(255,255,255) BT.Font = Enum.Font.GothamBold BT.TextSize = 12
+
+            DragButton.MouseButton1Click:Connect(function()
+                LocalPlayer.CameraMinZoomDistance = 5 LocalPlayer.CameraMaxZoomDistance = 30 LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            end)
+            local dragging, dragStart, startPos
+            DragButton.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true dragStart = i.Position startPos = DragButton.Position end end)
+            UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local d = i.Position - dragStart DragButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y) end end)
+            UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+        end
+    })
+
+        Tabs.Main:AddButton({
+        Title = "esp",
+        Callback = function()
+            local Camera = workspace.CurrentCamera
+            local RunService = game:GetService("RunService")
+            local function CreateESP(TP)
+                if TP == LocalPlayer then return end
+                local Box = Drawing.new("Square") Box.Visible = false Box.Color = Color3.fromRGB(255, 50, 50) Box.Thickness = 1.5
+                local NL = Drawing.new("Text") NL.Visible = false NL.Color = Color3.fromRGB(255, 255, 255) NL.Size = 14 NL.Center = true NL.Outline = true
+                local IL = Drawing.new("Text") IL.Visible = false IL.Color = Color3.fromRGB(0, 255, 120) IL.Size = 13 IL.Center = true IL.Outline = true
+
+                local c
+                c = RunService.RenderStepped:Connect(function()
+                    if TP.Character and TP.Character:FindFirstChild("HumanoidRootPart") and TP.Character:FindFirstChildOfClass("Humanoid") then
+                        local Hum = TP.Character:FindFirstChildOfClass("Humanoid")
+                        local Root = TP.Character.HumanoidRootPart
+                        if Hum.Health > 0 then
+                            local T, TOn = Camera:WorldToViewportPoint(Root.Position + Vector3.new(0, 2.8, 0))
+                            local B, BOn = Camera:WorldToViewportPoint(Root.Position + Vector3.new(0, -3.2, 0))
+                            if TOn and BOn then
+                                local BH = math.abs(T.Y - B.Y) local BW = BH * 0.55
+                                Box.Size = Vector2.new(BW, BH) Box.Position = Vector2.new(T.X - BW / 2, T.Y) Box.Visible = true
+                                NL.Text = TP.Name NL.Position = Vector2.new(T.X, T.Y - 16) NL.Visible = true
+                                local D = (Camera.CFrame.Position - Root.Position).Magnitude
+                                IL.Text = string.format("♥ %d | %dm", math.floor(Hum.Health), math.floor(D)) IL.Position = Vector2.new(T.X, B.Y + 4) IL.Visible = true
+                                IL.Color = Hum.Health < 35 and Color3.fromRGB(255, 60, 60) or Color3.fromRGB(0, 255, 120)
+                                return
+                            end
+                        end
+                    end
+                    Box.Visible = false NL.Visible = false IL.Visible = false
+                    if not Players:FindFirstChild(TP.Name) then Box:Remove() NL:Remove() IL:Remove() c:Disconnect() end
+                end)
+            end
+            for _, v in ipairs(Players:GetPlayers()) do CreateESP(v) end
+            Players.PlayerAdded:Connect(CreateESP)
+        end
+    })
+
+    Tabs.Main:AddButton({
+        Title = "Bhop",
+        Callback = function()
+            local char = workspace:WaitForChild(LocalPlayer.Name)
+            local hum = char:WaitForChild("Humanoid")
+            local myBool = workspace:WaitForChild("n" .. rand)
+            myBool.Value = not myBool.Value
+            while task.wait(tonumber(blo.Value) or 1.7) do
+                if myBool.Value == true then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+            end
+        end
+    })
+end
+
+    
+
 local adminNames = {
 ‎    ["FOPLORTE11"] = true
 ‎}
