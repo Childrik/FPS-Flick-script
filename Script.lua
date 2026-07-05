@@ -28,7 +28,11 @@ local function checkBan()
         end
     end
 end
-checkBan()
+-- Запускаем проверку бана в отдельном потоке, чтобы она не вешала основное меню
+task.spawn(function()
+    pcall(checkBan)
+end)
+
 
 local skyPresets = {
     ["Космос 🌌"] = { Bk = "rbxassetid://12124501308", Dn = "rbxassetid://12124504107", Ft = "rbxassetid://12124505966", Lf = "rbxassetid://12124507742", Rt = "rbxassetid://12124511520", Up = "rbxassetid://12124513835" },
